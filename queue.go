@@ -216,10 +216,6 @@ func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
 	return err
 }
 
-type JobTestData struct {
-	status string `json:"status"`
-}
-
 func (q *queue) NewJobFromId(jobId string) (Job, error) {
 	raw, err := q.client.HGet(q.ToKey("jobs"), jobId).Result()
 
@@ -229,7 +225,7 @@ func (q *queue) NewJobFromId(jobId string) (Job, error) {
 
 	var jobData JobData
 	json.Unmarshal([]byte(raw), &jobData)
-	job := NewJob(jobData.status, jobData.options, jobData.data, q)
+	job := NewJob(jobData.Status, jobData.Options, jobData.Data, q)
 
 	job.SetID(jobId)
 

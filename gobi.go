@@ -29,9 +29,9 @@ type Job interface {
 }
 
 type JobData struct {
-	data    interface{} `json:"data"`
-	options JobOptions  `json:"options"`
-	status  string      `json:"status"`
+	Data    interface{} `json:"data"`
+	Options JobOptions  `json:"options"`
+	Status  string      `json:"status"`
 }
 
 type job struct {
@@ -102,9 +102,9 @@ func (j *job) GetDelay() int64 {
 
 func (j *job) ToData() (string, error) {
 	raw, err := json.Marshal(&JobData{
-		status:  j.status,
-		data:    j.data,
-		options: j.options,
+		Status:  j.status,
+		Data:    j.data,
+		Options: j.options,
 	})
 
 	// It makes me sad to do a re-alloc here, but we need to test if

@@ -8,21 +8,21 @@ import (
 	"github.com/go-redis/redis"
 )
 
-// func TestJobSave(t *testing.T) {
-// 	client := redis.NewClient(&redis.Options{
-// 		Addr:     "127.0.0.1:6379",
-// 		Password: "",
-// 		DB:       0,
-// 	})
+func TestJobSave(t *testing.T) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+		Password: "",
+		DB:       0,
+	})
 
-// 	q := NewQueue("gobi", client, QueueOptions{})
+	q := NewQueue("gobi", client, QueueOptions{})
 
-// 	job := q.CreateJob(map[string]int{"foo": 4}, JobOptions{})
+	job := q.CreateJob(map[string]int{"foo": 4}, JobOptions{})
 
-// 	if _, err := job.Save(); err != nil {
-// 		t.Error("failed to save job: ", err)
-// 	}
-// }
+	if _, err := job.Save(); err != nil {
+		t.Error("failed to save job: ", err)
+	}
+}
 
 func TestJobProcess(t *testing.T) {
 	client := redis.NewClient(&redis.Options{
