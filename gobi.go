@@ -2,14 +2,13 @@ package gobi
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 type JobOptions struct {
 	Timestamp   int64          `json:"timestamp"`
 	Delay       int64          `json:"delay"`
-	Timeout     int            `json:"timeout"`
-	Retries     int            `json:"retries"`
+	Timeout     int64          `json:"timeout"`
+	Retries     int64          `json:"retries"`
 	Backoff     BackoffOptions `json:"backoff"`
 	StackTraces []string       `json:"stacktraces"`
 }
@@ -20,12 +19,19 @@ type BackoffOptions struct {
 }
 
 type Job interface {
-	Save() error
+	Save() (string, error)
 	ID() string
 	DecrementRetries()
 	AddError(err error)
 	GetDelay() int64
 	ToData() (string, error)
+	SetID(string)
+}
+
+type JobData struct {
+	data    interface{} `json:"data"`
+	options JobOptions  `json:"options"`
+	status  string      `json:"status"`
 }
 
 type job struct {
@@ -37,11 +43,11 @@ type job struct {
 	id      string
 }
 
-func (j *job) Save() error {
+func (j *job) Save() (string, error) {
 
 	data, err := j.ToData()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	jobId, err := j.queue.RunScriptForName(
@@ -55,13 +61,15 @@ func (j *job) Save() error {
 		data,
 	)
 
-	fmt.Println("jobId: ", jobId)
-
-	return err
+	return jobId.(string), err
 }
 
 func (j *job) ID() string {
 	return j.id
+}
+
+func (j *job) SetID(id string) {
+	j.id = id
 }
 
 func (j *job) DecrementRetries() {
@@ -93,13 +101,22 @@ func (j *job) GetDelay() int64 {
 }
 
 func (j *job) ToData() (string, error) {
-	raw, err := json.Marshal(map[string]interface{}{
-		"status":  j.status,
-		"data":    j.data,
-		"options": j.options,
+	raw, err := json.Marshal(&JobData{
+		status:  j.status,
+		data:    j.data,
+		options: j.options,
 	})
 
 	// It makes me sad to do a re-alloc here, but we need to test if
 	// *redis.Script is fine passing down a []byte before we can remove it.
 	return string(raw), err
+}
+
+func NewJob(status string, options JobOptions, data interface{}, q Queue) Job {
+	return &job{
+		queue:   q,
+		data:    data,
+		options: options,
+		status:  status,
+	}
 }

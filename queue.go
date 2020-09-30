@@ -87,12 +87,7 @@ func (q *queue) CreateJob(data interface{}, options JobOptions) Job {
 
 	options.StackTraces = make([]string, 0)
 
-	return &job{
-		queue:   q,
-		data:    data,
-		options: options,
-		status:  "created",
-	}
+	return NewJob("created", options, data, q)
 }
 
 func (q *queue) ToKey(s string) string {
@@ -117,7 +112,11 @@ func (q *queue) Process(concurrency int, handler func(Job) (interface{}, error))
 		pool.Submit(func() {
 			for {
 				// TODO: We should handle this error. Maybe using a channel of some kind?
-				job, _ := q.waitForJob()
+				job, err := q.waitForJob()
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
 				data, err := handler(job)
 				q.finishJob(err, data, job)
 			}
@@ -217,14 +216,22 @@ func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
 	return err
 }
 
+type JobTestData struct {
+	status string `json:"status"`
+}
+
 func (q *queue) NewJobFromId(jobId string) (Job, error) {
 	raw, err := q.client.HGet(q.ToKey("jobs"), jobId).Result()
+
 	if err != nil {
 		return nil, err
 	}
 
-	var job Job
-	json.Unmarshal([]byte(raw), job)
+	var jobData JobData
+	json.Unmarshal([]byte(raw), &jobData)
+	job := NewJob(jobData.status, jobData.options, jobData.data, q)
+
+	job.SetID(jobId)
 
 	return job, nil
 }
