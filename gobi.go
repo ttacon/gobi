@@ -2,16 +2,16 @@ package gobi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
 type JobOptions struct {
-	Timestamp int64          `json:"timestamp"`
-	Delay     int            `json:"delay"`
-	Timeout   int            `json:"timeout"`
-	Retries   int            `json:"retries"`
-	Backoff   BackoffOptions `json:"backoff"`
+	Timestamp   int64          `json:"timestamp"`
+	Delay       int            `json:"delay"`
+	Timeout     int            `json:"timeout"`
+	Retries     int            `json:"retries"`
+	Backoff     BackoffOptions `json:"backoff"`
+	StackTraces []string       `json:"stacktraces"`
 }
 
 type BackoffOptions struct {
@@ -21,7 +21,12 @@ type BackoffOptions struct {
 
 type Job interface {
 	Save() error
-	Id() string
+	ID() string
+	SetProgress(data interface{})
+	DecrementRetries()
+	AddError(err error)
+	GetDelay() int
+	ToData() (string, error)
 }
 
 type job struct {
@@ -34,29 +39,25 @@ type job struct {
 }
 
 func (j *job) Save() error {
-	addJobScript, ok := j.queue.scriptForName("addJob")
-	if !ok {
-		return errors.New("no such script")
-	}
 
-	data, err := j.toData()
+	data, err := j.ToData()
 	if err != nil {
 		return err
 	}
 
-	jobId, err := addJobScript.Run(
-		j.queue.client,
-		[]string{j.queue.ToKey("id"), j.queue.ToKey("jobs"), j.queAddue.ToKey("waiting")},
+	jobId, err := j.queue.RunScriptForName(
+		"addJob",
+		[]string{j.queue.ToKey("id"), j.queue.ToKey("jobs"), j.queue.ToKey("waiting")},
 		"", // Not supporting nullable specific Job IDs out of the box
 		data,
-	).Result()
+	)
 
 	fmt.Println("jobId: ", jobId)
 
 	return err
 }
 
-func (j *Job) Id() string {
+func (j *job) ID() string {
 	return j.id
 }
 
@@ -68,7 +69,31 @@ func (j *job) DecrementRetries() {
 	j.options.Retries -= 1
 }
 
-func (j *job) toData() (string, error) {
+func (j *job) AddError(err error) {
+	stacktrace := err.Error()
+	j.options.StackTraces = append([]string{stacktrace}, j.options.StackTraces...)
+}
+
+func (j *job) GetDelay() int {
+	if j.options.Retries == 0 {
+		return -1
+	}
+
+	switch j.options.Backoff.Strategy {
+	case "fixed":
+		return j.options.Backoff.Delay
+	case "exponential":
+		j.options.Backoff.Delay *= 2
+		return j.options.Backoff.Delay
+	case "immediate":
+	default:
+		return 0
+	}
+
+	return 0
+}
+
+func (j *job) ToData() (string, error) {
 	raw, err := json.Marshal(map[string]interface{}{
 		"status":  j.status,
 		"data":    j.data,
