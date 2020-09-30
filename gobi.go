@@ -22,7 +22,6 @@ type BackoffOptions struct {
 type Job interface {
 	Save() error
 	ID() string
-	SetProgress(data interface{})
 	DecrementRetries()
 	AddError(err error)
 	GetDelay() int64
@@ -47,7 +46,11 @@ func (j *job) Save() error {
 
 	jobId, err := j.queue.RunScriptForName(
 		"addJob",
-		[]string{j.queue.ToKey("id"), j.queue.ToKey("jobs"), j.queue.ToKey("waiting")},
+		[]string{
+			j.queue.ToKey("id"),
+			j.queue.ToKey("jobs"),
+			j.queue.ToKey("waiting"),
+		},
 		"", // Not supporting nullable specific Job IDs out of the box
 		data,
 	)
@@ -59,10 +62,6 @@ func (j *job) Save() error {
 
 func (j *job) ID() string {
 	return j.id
-}
-
-func (j *job) SetProgress(data interface{}) {
-	j.data = data
 }
 
 func (j *job) DecrementRetries() {

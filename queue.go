@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gammazero/workerpool"
 	"github.com/go-redis/redis"
 )
 
@@ -15,9 +16,10 @@ type Queue interface {
 	Name() string
 	CreateJob(data interface{}, options JobOptions) Job
 	ToKey(string) string
-	Process(int, func(Job))
+	Process(int, func(Job) (interface{}, error))
 
 	RunScriptForName(name string, keys []string, args ...interface{}) (interface{}, error)
+	NewJobFromId(string) (Job, error)
 }
 
 type queue struct {
@@ -25,7 +27,6 @@ type queue struct {
 	client          *redis.Client
 	queuePrefix     string
 	scripts         map[string]*redis.Script
-	jobs            map[string]Job
 	removeOnFailure bool
 	removeOnSuccess bool
 }
@@ -57,7 +58,6 @@ func NewQueue(name string, client *redis.Client, options QueueOptions) Queue {
 		client,
 		options.QueuePrefix,
 		map[string]*redis.Script{},
-		map[string]Job{},
 		options.RemoveOnFailure,
 		options.RemoveOnSuccess,
 	}
@@ -67,7 +67,6 @@ func NewQueue(name string, client *redis.Client, options QueueOptions) Queue {
 	}
 
 	q.ensureScripts()
-	q.subscribeToMessages()
 
 	return q
 }
@@ -106,12 +105,33 @@ func (q *queue) RunScriptForName(name string, keys []string, args ...interface{}
 		return nil, errors.New("no such script")
 	}
 
-	result, err := script.Run(q.client, keys, args).Result()
+	result, err := script.Run(q.client, keys, args...).Result()
 	return result, err
 }
 
-func (q *queue) Process(concurrency int, handler func(Job)) {
+func (q *queue) Process(concurrency int, handler func(Job) (interface{}, error)) {
+	pool := workerpool.New(concurrency)
 
+	// Start one worker process for each concurrency
+	for i := 0; i < concurrency; i++ {
+		pool.Submit(func() {
+			for {
+				// TODO: We should handle this error. Maybe using a channel of some kind?
+				job, _ := q.waitForJob()
+				data, err := handler(job)
+				q.finishJob(err, data, job)
+			}
+		})
+	}
+}
+
+func (q *queue) waitForJob() (Job, error) {
+	jobId, err := q.client.BRPopLPush(q.ToKey("waiting"), q.ToKey("active"), time.Duration(0)).Result()
+	if err != nil {
+		return nil, err
+	}
+	job, err := q.NewJobFromId(jobId)
+	return job, err
 }
 
 func (q *queue) ensureScripts() {
@@ -126,35 +146,6 @@ func (q *queue) ensureScripts() {
 		// is acceptable (as the script execution will detect that
 		// the script was already loaded into Redis by node).
 	}
-}
-
-func (q *queue) subscribeToMessages() {
-	pubSub := q.client.Subscribe(q.ToKey("events"))
-	messageChannel := pubSub.Channel()
-
-	go func() {
-		defer pubSub.Close()
-		for message := range messageChannel {
-			var event QueueEvent
-			json.Unmarshal([]byte(message.Payload), &event)
-
-			job, ok := q.jobs[event.id]
-			if !ok {
-				continue
-			}
-
-			switch event.event {
-			case "progress":
-				job.SetProgress(event.data)
-			case "retrying":
-				job.DecrementRetries()
-			case "succeeded":
-			case "failed":
-				delete(q.jobs, event.id)
-			}
-
-		}
-	}()
 }
 
 func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
@@ -221,6 +212,19 @@ func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
 	}
 
 	pipeline.Publish(q.ToKey("events"), event)
+	_, err = pipeline.Exec()
 
-	return nil
+	return err
+}
+
+func (q *queue) NewJobFromId(jobId string) (Job, error) {
+	raw, err := q.client.HGet(q.ToKey("jobs"), jobId).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var job Job
+	json.Unmarshal([]byte(raw), job)
+
+	return job, nil
 }

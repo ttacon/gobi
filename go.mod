@@ -3,6 +3,7 @@ module github.com/ttacon/gobi
 go 1.15
 
 require (
+	github.com/gammazero/workerpool v1.0.0
 	github.com/garyburd/redigo v1.6.2 // indirect
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/gomodule/redigo v1.8.2 // indirect
