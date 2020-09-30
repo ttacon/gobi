@@ -95,17 +95,12 @@ func (q *queue) CreateJob(data interface{}, options JobOptions) Job {
 	}
 }
 
-type scriptInfo struct {
-	numKeys int
-	raw     string
-}
-
-var scriptsToEnsure = map[string]scriptInfo{
-	"addJob": scriptInfo{3, addJob},
-}
-
 func (q *queue) ensureScripts() {
-	for key, rawScript := range scriptsToEnsure {
+	scripts, err := loadScripts()
+	if err != nil {
+		panic(err)
+	}
+	for key, rawScript := range scripts {
 		newScript := redis.NewScript(rawScript.numKeys, rawScript.raw)
 		q.scripts[key] = newScript
 
