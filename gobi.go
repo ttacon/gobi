@@ -7,7 +7,7 @@ import (
 
 type JobOptions struct {
 	Timestamp   int64          `json:"timestamp"`
-	Delay       int            `json:"delay"`
+	Delay       int64          `json:"delay"`
 	Timeout     int            `json:"timeout"`
 	Retries     int            `json:"retries"`
 	Backoff     BackoffOptions `json:"backoff"`
@@ -16,7 +16,7 @@ type JobOptions struct {
 
 type BackoffOptions struct {
 	Strategy string `json:"strategy"`
-	Delay    int    `json:"delay"`
+	Delay    int64  `json:"delay"`
 }
 
 type Job interface {
@@ -25,7 +25,7 @@ type Job interface {
 	SetProgress(data interface{})
 	DecrementRetries()
 	AddError(err error)
-	GetDelay() int
+	GetDelay() int64
 	ToData() (string, error)
 }
 
@@ -74,7 +74,7 @@ func (j *job) AddError(err error) {
 	j.options.StackTraces = append([]string{stacktrace}, j.options.StackTraces...)
 }
 
-func (j *job) GetDelay() int {
+func (j *job) GetDelay() int64 {
 	if j.options.Retries == 0 {
 		return -1
 	}

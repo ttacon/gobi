@@ -27,17 +27,19 @@ type queue struct {
 	scripts         map[string]*redis.Script
 	jobs            map[string]Job
 	removeOnFailure bool
+	removeOnSuccess bool
 }
 
 type QueueOptions struct {
 	QueuePrefix     string
 	RemoveOnFailure bool
+	RemoveOnSuccess bool
 }
 
 type QueueEvent struct {
-	event string
-	data  interface{}
-	id    string
+	event string      `json:"event"`
+	data  interface{} `json:"data"`
+	id    string      `json:"id"`
 }
 
 type scriptInfo struct {
@@ -57,6 +59,7 @@ func NewQueue(name string, client *redis.Client, options QueueOptions) Queue {
 		map[string]*redis.Script{},
 		map[string]Job{},
 		options.RemoveOnFailure,
+		options.RemoveOnSuccess,
 	}
 
 	if len(q.queuePrefix) == 0 {
@@ -169,8 +172,19 @@ func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
 		return err
 	}
 
+	jobData, err := j.ToData()
+	if err != nil {
+		return err
+	}
+
 	if jobError == nil {
 		status = "succeeded"
+		if q.removeOnSuccess {
+			pipeline.HDel(q.ToKey("jobs"), j.ID())
+		} else {
+			pipeline.HSet(q.ToKey("jobs"), j.ID(), jobData)
+			pipeline.SAdd(q.ToKey("succeeded"), j.ID())
+		}
 	} else {
 		status = "failed"
 		j.AddError(err)
@@ -180,25 +194,33 @@ func (q *queue) finishJob(jobError error, data interface{}, j Job) error {
 			if q.removeOnFailure {
 				pipeline.HDel(q.ToKey("jobs"), j.ID())
 			} else {
-				jobData, err := j.ToData()
-				if err != nil {
-					return err
-				}
-
 				pipeline.HSet(q.ToKey("jobs"), j.ID(), jobData)
 				pipeline.SAdd(q.ToKey("failed"), j.ID())
 			}
 		} else {
 			j.DecrementRetries()
 			status = "retrying"
+			pipeline.HSet(q.ToKey("jobs"), j.ID(), jobData)
+
+			if delay == 0 {
+				pipeline.LPush(q.ToKey("waiting"), j.ID())
+			} else {
+				time := time.Now().Unix() + delay
+				pipeline.ZAdd(q.ToKey("delayed"), redis.Z{Score: float64(time), Member: j.ID()})
+			}
 		}
 	}
 
-	event := &QueueEvent{
+	event, err := json.Marshal(&QueueEvent{
 		event: status,
 		id:    j.ID(),
 		data:  data,
+	})
+	if err != nil {
+		return err
 	}
+
+	pipeline.Publish(q.ToKey("events"), event)
 
 	return nil
 }
