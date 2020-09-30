@@ -1,0 +1,3 @@
+[submodule "bee-queue"]
+	path = bee-queue
+	url = git@github.com:bee-queue/bee-queue.git
