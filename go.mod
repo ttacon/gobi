@@ -7,6 +7,7 @@ require (
 	github.com/garyburd/redigo v1.6.2 // indirect
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/gomodule/redigo v1.8.2 // indirect
+  github.com/markbates/pkger v0.17.1
 	github.com/onsi/ginkgo v1.14.1 // indirect
 	github.com/onsi/gomega v1.10.2 // indirect
 	github.com/rafaeljusto/redigomock v2.4.0+incompatible // indirect

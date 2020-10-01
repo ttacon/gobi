@@ -43,14 +43,6 @@ type QueueEvent struct {
 	id    string      `json:"id"`
 }
 
-type scriptInfo struct {
-	raw string
-}
-
-var scriptsToEnsure = map[string]scriptInfo{
-	"addJob": scriptInfo{addJob},
-}
-
 func NewQueue(name string, client *redis.Client, options QueueOptions) Queue {
 	// Setup our queue.
 	q := &queue{
@@ -134,14 +126,18 @@ func (q *queue) waitForJob() (Job, error) {
 }
 
 func (q *queue) ensureScripts() {
-	for key, rawScript := range scriptsToEnsure {
+	scripts, err := loadScripts()
+	if err != nil {
+		panic(err)
+	}
+	for key, rawScript := range scripts {
 		newScript := redis.NewScript(rawScript.raw)
 		q.scripts[key] = newScript
 
 		// Currently, `redis.NewScript` will not automatically
 		// ensure that our script exists in the Redis but rather
 		// it ensures that it exists at execution time. For now,
-		// as we only proviDe Go consumer code for bee-queue, this
+		// as we only provide Go consumer code for bee-queue, this
 		// is acceptable (as the script execution will detect that
 		// the script was already loaded into Redis by node).
 	}
